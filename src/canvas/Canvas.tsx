@@ -16,7 +16,7 @@ import {
   rotateFurnitureInstanceCommand,
   getActivePlan,
 } from '../state/planCommands';
-import { snapPoint } from './coords';
+import { snapPoint, snapToAngleAndDistance } from './coords';
 import { findNearestWall } from './wallMath';
 import DoorWindowLayer from './DoorWindowLayer';
 import PointMarkerLayer from './PointMarkerLayer';
@@ -101,7 +101,11 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
     }
     if (tool === 'wall') {
       const world = screenToWorld(e.clientX, e.clientY);
-      setHover(snapPoint(world));
+      // wallStart があれば 15度刻み + 5cm 刻みでスナップ、無ければ通常のグリッドスナップ
+      const snapped = wallStart
+        ? snapToAngleAndDistance(wallStart, world, 15)
+        : snapPoint(world);
+      setHover(snapped);
     }
   };
 
@@ -130,10 +134,12 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
       if (!wallStart) {
         setWallStart(snapped);
       } else {
-        if (snapped.x !== wallStart.x || snapped.y !== wallStart.y) {
-          dispatch(addWallCommand(wallStart, snapped, color));
+        // 15度刻み + 5cm 刻みにスナップ
+        const endPoint = snapToAngleAndDistance(wallStart, world, 15);
+        if (endPoint.x !== wallStart.x || endPoint.y !== wallStart.y) {
+          dispatch(addWallCommand(wallStart, endPoint, color));
         }
-        setWallStart(snapped);
+        setWallStart(endPoint);
       }
     } else if (tool === 'door' || tool === 'window') {
       const threshold = Math.max(20, viewBox.w / 40);

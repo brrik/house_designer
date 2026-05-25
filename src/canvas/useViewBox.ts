@@ -21,16 +21,18 @@ export function useViewBox(svgRef: React.RefObject<SVGSVGElement | null>, opts: 
 
   const screenToWorld = useCallback(
     (sx: number, sy: number) => {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return { x: 0, y: 0 };
-      const px = (sx - rect.left) / rect.width;
-      const py = (sy - rect.top) / rect.height;
-      return {
-        x: viewBox.x + px * viewBox.w,
-        y: viewBox.y + py * viewBox.h,
-      };
+      const svg = svgRef.current;
+      if (!svg) return { x: 0, y: 0 };
+      // SVG ネイティブの座標変換を使う。preserveAspectRatio のレターボックスも正しく扱われる。
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return { x: 0, y: 0 };
+      const pt = svg.createSVGPoint();
+      pt.x = sx;
+      pt.y = sy;
+      const w = pt.matrixTransform(ctm.inverse());
+      return { x: w.x, y: w.y };
     },
-    [svgRef, viewBox],
+    [svgRef],
   );
 
   const zoomAt = useCallback(
@@ -116,12 +118,29 @@ export function useViewBox(svgRef: React.RefObject<SVGSVGElement | null>, opts: 
       ) {
         const dx = e.clientX - lastPanPointer.current.x;
         const dy = e.clientY - lastPanPointer.current.y;
+        // クリック判定のため、わずかな移動ではパンしない
+        if (Math.hypot(dx, dy) < 6) return;
         lastPanPointer.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
         setViewBox((prev) => {
           const rect = svgRef.current?.getBoundingClientRect();
           if (!rect) return prev;
-          const wx = (dx / rect.width) * prev.w;
-          const wy = (dy / rect.height) * prev.h;
+          // viewBox は preserveAspectRatio=meet によりレターボックスされる前提で、
+          // 1 screen px が world に対応する長さを計算する
+          const aspectVB = prev.w / prev.h;
+          const aspectRect = rect.width / rect.height;
+          // 表示されている content size (px)
+          let contentW: number;
+          let contentH: number;
+          if (aspectVB > aspectRect) {
+            // viewBox が横長 → 横いっぱい、縦がレターボックス
+            contentW = rect.width;
+            contentH = rect.width / aspectVB;
+          } else {
+            contentH = rect.height;
+            contentW = rect.height * aspectVB;
+          }
+          const wx = (dx / contentW) * prev.w;
+          const wy = (dy / contentH) * prev.h;
           return { ...prev, x: prev.x - wx, y: prev.y - wy };
         });
       }
