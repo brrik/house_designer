@@ -17,9 +17,9 @@ type UiState = {
   tool: ToolId;
   setTool: (t: ToolId) => void;
 
-  // 壁ツール: 連続描画用の前回頂点
-  wallStartPoint: Point | null;
-  setWallStartPoint: (p: Point | null) => void;
+  // 壁・ドア・窓ツールの作図中の始点
+  segmentStartPoint: Point | null;
+  setSegmentStartPoint: (p: Point | null) => void;
 
   // ポインタ追従用 (描画プレビュー)
   hoverPoint: Point | null;
@@ -41,10 +41,10 @@ type UiState = {
 
 export const useUiStore = create<UiState>((set) => ({
   tool: 'select',
-  setTool: (t) => set({ tool: t, wallStartPoint: null }),
+  setTool: (t) => set({ tool: t, segmentStartPoint: null }),
 
-  wallStartPoint: null,
-  setWallStartPoint: (p) => set({ wallStartPoint: p }),
+  segmentStartPoint: null,
+  setSegmentStartPoint: (p) => set({ segmentStartPoint: p }),
 
   hoverPoint: null,
   setHoverPoint: (p) => set({ hoverPoint: p }),

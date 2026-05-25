@@ -17,7 +17,6 @@ import {
   getActivePlan,
 } from '../state/planCommands';
 import { snapPoint, snapToAngleAndDistance } from './coords';
-import { findNearestWall } from './wallMath';
 import DoorWindowLayer from './DoorWindowLayer';
 import PointMarkerLayer from './PointMarkerLayer';
 import FurnitureLayer from './FurnitureLayer';
@@ -40,13 +39,16 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
   const plan = getActivePlan(persisted);
 
   const tool = useUiStore((s) => s.tool);
-  const wallStart = useUiStore((s) => s.wallStartPoint);
-  const setWallStart = useUiStore((s) => s.setWallStartPoint);
+  const segStart = useUiStore((s) => s.segmentStartPoint);
+  const setSegStart = useUiStore((s) => s.setSegmentStartPoint);
   const hover = useUiStore((s) => s.hoverPoint);
   const setHover = useUiStore((s) => s.setHoverPoint);
   const color = useUiStore((s) => s.currentColor);
   const selectedId = useUiStore((s) => s.selectedId);
   const setSelectedId = useUiStore((s) => s.setSelectedId);
+
+  // ツールが線分系（壁・ドア・窓）かを判定
+  const isSegmentTool = tool === 'wall' || tool === 'door' || tool === 'window';
 
   // クリック判定（ドラッグでない）
   const pressInfo = useRef<{ x: number; y: number; t: number; moved: boolean } | null>(null);
@@ -99,11 +101,10 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
         pressInfo.current.moved = true;
       }
     }
-    if (tool === 'wall') {
+    if (isSegmentTool) {
       const world = screenToWorld(e.clientX, e.clientY);
-      // wallStart があれば 15度刻み + 5cm 刻みでスナップ、無ければ通常のグリッドスナップ
-      const snapped = wallStart
-        ? snapToAngleAndDistance(wallStart, world, 15)
+      const snapped = segStart
+        ? snapToAngleAndDistance(segStart, world, 15)
         : snapPoint(world);
       setHover(snapped);
     }
@@ -130,26 +131,18 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
     const world = screenToWorld(e.clientX, e.clientY);
     const snapped = snapPoint(world);
 
-    if (tool === 'wall') {
-      if (!wallStart) {
-        setWallStart(snapped);
+    if (isSegmentTool) {
+      // 壁・ドア・窓: 始点クリック → 終点クリック で 1 本確定。連続描画はしない。
+      if (!segStart) {
+        setSegStart(snapped);
       } else {
-        // 15度刻み + 5cm 刻みにスナップ
-        const endPoint = snapToAngleAndDistance(wallStart, world, 15);
-        if (endPoint.x !== wallStart.x || endPoint.y !== wallStart.y) {
-          dispatch(addWallCommand(wallStart, endPoint, color));
+        const endPoint = snapToAngleAndDistance(segStart, world, 15);
+        if (endPoint.x !== segStart.x || endPoint.y !== segStart.y) {
+          if (tool === 'wall') dispatch(addWallCommand(segStart, endPoint, color));
+          else if (tool === 'door') dispatch(addDoorCommand(segStart, endPoint));
+          else dispatch(addWindowCommand(segStart, endPoint));
         }
-        setWallStart(endPoint);
-      }
-    } else if (tool === 'door' || tool === 'window') {
-      const threshold = Math.max(20, viewBox.w / 40);
-      const hit = findNearestWall(world, plan.walls, threshold);
-      if (hit) {
-        if (tool === 'door') {
-          dispatch(addDoorCommand(hit.wall.id, hit.t));
-        } else {
-          dispatch(addWindowCommand(hit.wall.id, hit.t));
-        }
+        setSegStart(null);
       }
     } else if (tool === 'outlet') {
       dispatch(addOutletCommand(snapped.x, snapped.y, 2));
@@ -163,9 +156,9 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
-    if (tool === 'wall' && wallStart) {
+    if (isSegmentTool && segStart) {
       e.preventDefault();
-      setWallStart(null);
+      setSegStart(null);
     }
   };
 
@@ -243,18 +236,22 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
             selectedId={selectedId}
             onSelect={tool === 'select' ? (id) => setSelectedId(id) : undefined}
             preview={
-              tool === 'wall' && wallStart && hover
-                ? { from: wallStart, to: hover, color }
+              tool === 'wall' && segStart && hover
+                ? { from: segStart, to: hover, color }
                 : null
             }
           />
           <DoorWindowLayer
-            walls={plan.walls}
             doors={plan.doors}
             windows={plan.windows}
             viewBox={viewBox}
             selectedId={selectedId}
             onSelect={tool === 'select' ? (id) => setSelectedId(id) : undefined}
+            preview={
+              (tool === 'door' || tool === 'window') && segStart && hover
+                ? { kind: tool, from: segStart, to: hover }
+                : null
+            }
           />
           <PointMarkerLayer
             outlets={plan.outlets}
@@ -282,8 +279,18 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
         .map((w) => (
           <LengthLabel key={`len-${w.id}`} a={w.a} b={w.b} viewBox={viewBox} />
         ))}
-      {tool === 'wall' && wallStart && hover && (
-        <LengthLabel a={wallStart} b={hover} viewBox={viewBox} />
+      {plan?.doors
+        .filter((d) => d.id === selectedId)
+        .map((d) => (
+          <LengthLabel key={`len-${d.id}`} a={d.a} b={d.b} viewBox={viewBox} />
+        ))}
+      {plan?.windows
+        .filter((w) => w.id === selectedId)
+        .map((w) => (
+          <LengthLabel key={`len-${w.id}`} a={w.a} b={w.b} viewBox={viewBox} />
+        ))}
+      {isSegmentTool && segStart && hover && (
+        <LengthLabel a={segStart} b={hover} viewBox={viewBox} />
       )}
     </svg>
   );

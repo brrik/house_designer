@@ -10,22 +10,26 @@ type Props = {
   onSelect?: (id: string) => void;
 };
 
-// アイコンサイズ (cm)。viewBox の大きさに依存しない実寸固定。
-const ICON_R_CM = 8;
+// アイコン半径。最小 15cm (= 方眼3マス相当の直径) を保証しつつ、
+// 大きくズームアウトしている場合は viewBox 比で拡大して常に視認できるサイズに。
+function iconRadius(viewBox: ViewBox): number {
+  return Math.max(15, viewBox.w * 0.015);
+}
 
 function OutletIcon({
   o,
+  r,
   selected,
   onSelect,
 }: {
   o: Outlet;
+  r: number;
   selected: boolean;
   onSelect?: () => void;
 }) {
   const stroke = selected ? '#1e90ff' : '#333';
-  // 口数分のドットを横並び。最大4個、ICON_R_CM の円内に配置
-  const dotR = ICON_R_CM * 0.25;
-  const spacing = ICON_R_CM * 0.5;
+  const dotR = r * 0.25;
+  const spacing = r * 0.5;
   const offsets: number[] = [];
   for (let i = 0; i < o.plugs; i++) {
     offsets.push((i - (o.plugs - 1) / 2) * spacing);
@@ -33,14 +37,14 @@ function OutletIcon({
   return (
     <g
       transform={`translate(${o.x} ${o.y})`}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: onSelect ? 'pointer' : 'default' }}
       onPointerDown={(e) => {
         if (!onSelect) return;
         e.stopPropagation();
         onSelect();
       }}
     >
-      <circle r={ICON_R_CM} fill="#fff" stroke={stroke} strokeWidth={ICON_R_CM * 0.12} />
+      <circle r={r} fill="#fff" stroke={stroke} strokeWidth={r * 0.12} />
       {offsets.map((dx, i) => (
         <circle key={i} cx={dx} cy={0} r={dotR} fill={stroke} />
       ))}
@@ -50,10 +54,12 @@ function OutletIcon({
 
 function InfoOutletIcon({
   o,
+  r,
   selected,
   onSelect,
 }: {
   o: InfoOutlet;
+  r: number;
   selected: boolean;
   onSelect?: () => void;
 }) {
@@ -61,7 +67,7 @@ function InfoOutletIcon({
   return (
     <g
       transform={`translate(${o.x} ${o.y})`}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: onSelect ? 'pointer' : 'default' }}
       onPointerDown={(e) => {
         if (!onSelect) return;
         e.stopPropagation();
@@ -69,20 +75,20 @@ function InfoOutletIcon({
       }}
     >
       <rect
-        x={-ICON_R_CM}
-        y={-ICON_R_CM}
-        width={ICON_R_CM * 2}
-        height={ICON_R_CM * 2}
+        x={-r}
+        y={-r}
+        width={r * 2}
+        height={r * 2}
         fill="#fff"
         stroke={stroke}
-        strokeWidth={ICON_R_CM * 0.12}
+        strokeWidth={r * 0.12}
       />
       <text
         x={0}
         y={0}
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize={ICON_R_CM * 1.1}
+        fontSize={r * 1.1}
         fontWeight={700}
         fill={stroke}
       >
@@ -94,27 +100,28 @@ function InfoOutletIcon({
 
 function LightIcon({
   l,
+  r,
   selected,
   onSelect,
 }: {
   l: Light;
+  r: number;
   selected: boolean;
   onSelect?: () => void;
 }) {
   const stroke = selected ? '#1e90ff' : '#c70';
-  // 星型 (5 角)
-  const r1 = ICON_R_CM;
-  const r2 = ICON_R_CM * 0.45;
+  const r1 = r;
+  const r2 = r * 0.45;
   const points: string[] = [];
   for (let i = 0; i < 10; i++) {
     const ang = (Math.PI / 5) * i - Math.PI / 2;
-    const r = i % 2 === 0 ? r1 : r2;
-    points.push(`${Math.cos(ang) * r},${Math.sin(ang) * r}`);
+    const rr = i % 2 === 0 ? r1 : r2;
+    points.push(`${Math.cos(ang) * rr},${Math.sin(ang) * rr}`);
   }
   return (
     <g
       transform={`translate(${l.x} ${l.y})`}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: onSelect ? 'pointer' : 'default' }}
       onPointerDown={(e) => {
         if (!onSelect) return;
         e.stopPropagation();
@@ -125,7 +132,7 @@ function LightIcon({
         points={points.join(' ')}
         fill="#fff8e0"
         stroke={stroke}
-        strokeWidth={ICON_R_CM * 0.12}
+        strokeWidth={r * 0.12}
       />
     </g>
   );
@@ -135,15 +142,18 @@ export default function PointMarkerLayer({
   outlets,
   infoOutlets,
   lights,
+  viewBox,
   selectedId,
   onSelect,
 }: Props) {
+  const r = iconRadius(viewBox);
   return (
     <g>
       {outlets.map((o) => (
         <OutletIcon
           key={o.id}
           o={o}
+          r={r}
           selected={selectedId === o.id}
           onSelect={onSelect ? () => onSelect(o.id) : undefined}
         />
@@ -152,6 +162,7 @@ export default function PointMarkerLayer({
         <InfoOutletIcon
           key={o.id}
           o={o}
+          r={r}
           selected={selectedId === o.id}
           onSelect={onSelect ? () => onSelect(o.id) : undefined}
         />
@@ -160,6 +171,7 @@ export default function PointMarkerLayer({
         <LightIcon
           key={l.id}
           l={l}
+          r={r}
           selected={selectedId === l.id}
           onSelect={onSelect ? () => onSelect(l.id) : undefined}
         />

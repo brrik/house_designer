@@ -1,14 +1,10 @@
-import type { FurnitureTemplate, Plan, Wall } from '../types';
+import type { FurnitureTemplate, Plan } from '../types';
 
 // プランをスタンドアロン SVG 文字列に変換する。React 依存なし。
 // 寸法は cm 単位。viewBox はキャンバスサイズに合わせる。
 
 const xmlEscape = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-function wallAngle(w: Wall): number {
-  return Math.atan2(w.b.y - w.a.y, w.b.x - w.a.x);
-}
 
 type RenderOptions = {
   showDimensions?: boolean; // 寸法線を入れるか (詳細図用)
@@ -37,57 +33,46 @@ export function renderPlanSvg(
     );
   }
 
-  // ドア / 窓 (Canvas で描いたのと同じ計算)
+  // ドア (a→b の線分ベース)
   for (const d of plan.doors) {
-    const wall = plan.walls.find((w) => w.id === d.wallId);
-    if (!wall) continue;
-    const ang = wallAngle(wall);
-    const cosA = Math.cos(ang);
-    const sinA = Math.sin(ang);
-    const cx = wall.a.x + (wall.b.x - wall.a.x) * d.t;
-    const cy = wall.a.y + (wall.b.y - wall.a.y) * d.t;
-    const half = d.widthCm / 2;
-    const hingeX = cx - cosA * half;
-    const hingeY = cy - sinA * half;
-    const tipX = cx + cosA * half;
-    const tipY = cy + sinA * half;
+    const dx = d.b.x - d.a.x;
+    const dy = d.b.y - d.a.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) continue;
+    const cosA = dx / len;
+    const sinA = dy / len;
     const nDir = d.flipped ? -1 : 1;
     const nx = -sinA * nDir;
     const ny = cosA * nDir;
-    const doorEndX = hingeX + nx * d.widthCm;
-    const doorEndY = hingeY + ny * d.widthCm;
+    const doorEndX = d.a.x + nx * len;
+    const doorEndY = d.a.y + ny * len;
     const sweep = nDir > 0 ? 0 : 1;
     parts.push(
-      `<line x1="${hingeX}" y1="${hingeY}" x2="${tipX}" y2="${tipY}" stroke="#ffffff" stroke-width="${strokeW * 1.1}"/>`,
-      `<line x1="${hingeX}" y1="${hingeY}" x2="${doorEndX}" y2="${doorEndY}" stroke="#444" stroke-width="${strokeW * 0.5}"/>`,
-      `<path d="M ${tipX} ${tipY} A ${d.widthCm} ${d.widthCm} 0 0 ${sweep} ${doorEndX} ${doorEndY}" stroke="#444" stroke-width="${strokeW * 0.4}" fill="none"/>`,
+      `<line x1="${d.a.x}" y1="${d.a.y}" x2="${d.b.x}" y2="${d.b.y}" stroke="#ffffff" stroke-width="${strokeW * 1.1}"/>`,
+      `<line x1="${d.a.x}" y1="${d.a.y}" x2="${doorEndX}" y2="${doorEndY}" stroke="#444" stroke-width="${strokeW * 0.5}"/>`,
+      `<path d="M ${d.b.x} ${d.b.y} A ${len} ${len} 0 0 ${sweep} ${doorEndX} ${doorEndY}" stroke="#444" stroke-width="${strokeW * 0.4}" fill="none"/>`,
     );
   }
+  // 窓
   for (const win of plan.windows) {
-    const wall = plan.walls.find((w) => w.id === win.wallId);
-    if (!wall) continue;
-    const ang = wallAngle(wall);
-    const cosA = Math.cos(ang);
-    const sinA = Math.sin(ang);
-    const cx = wall.a.x + (wall.b.x - wall.a.x) * win.t;
-    const cy = wall.a.y + (wall.b.y - wall.a.y) * win.t;
-    const half = win.widthCm / 2;
-    const ax = cx - cosA * half;
-    const ay = cy - sinA * half;
-    const bx = cx + cosA * half;
-    const by = cy + sinA * half;
+    const dx = win.b.x - win.a.x;
+    const dy = win.b.y - win.a.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) continue;
+    const cosA = dx / len;
+    const sinA = dy / len;
     const off = strokeW * 0.3;
     const nx = -sinA;
     const ny = cosA;
     parts.push(
-      `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#ffffff" stroke-width="${strokeW * 1.1}"/>`,
-      `<line x1="${ax + nx * off}" y1="${ay + ny * off}" x2="${bx + nx * off}" y2="${by + ny * off}" stroke="#0070a0" stroke-width="${strokeW * 0.25}"/>`,
-      `<line x1="${ax - nx * off}" y1="${ay - ny * off}" x2="${bx - nx * off}" y2="${by - ny * off}" stroke="#0070a0" stroke-width="${strokeW * 0.25}"/>`,
+      `<line x1="${win.a.x}" y1="${win.a.y}" x2="${win.b.x}" y2="${win.b.y}" stroke="#ffffff" stroke-width="${strokeW * 1.1}"/>`,
+      `<line x1="${win.a.x + nx * off}" y1="${win.a.y + ny * off}" x2="${win.b.x + nx * off}" y2="${win.b.y + ny * off}" stroke="#0070a0" stroke-width="${strokeW * 0.25}"/>`,
+      `<line x1="${win.a.x - nx * off}" y1="${win.a.y - ny * off}" x2="${win.b.x - nx * off}" y2="${win.b.y - ny * off}" stroke="#0070a0" stroke-width="${strokeW * 0.25}"/>`,
     );
   }
 
-  // 点マーカー
-  const iconR = 8;
+  // 点マーカー（最小 15cm + viewBox 比でスケール）
+  const iconR = Math.max(15, wCm * 0.015);
   for (const o of plan.outlets) {
     parts.push(
       `<g transform="translate(${o.x} ${o.y})">`,

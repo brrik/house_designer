@@ -8,18 +8,24 @@ export type Wall = {
   color: string;
 };
 
-// ドア・窓は壁線上の配置。t は始点(a)からの 0..1 の位置。
-// 配置中心は a + (b - a) * t で算出。
-export type WallMount = {
+// ドア・窓は線分（壁と同じく始点 a、終点 b）。
+// 5cm スナップ + 15度刻みで配置する。
+// flipped はドアの開く向き / 窓の二重線基準側の反転用。
+export type Door = {
   id: string;
-  wallId: string;
-  t: number; // 0..1
-  // ドア・窓の向きフラグ（建築記号の左右反転用）
+  a: Point;
+  b: Point;
   flipped: boolean;
+  kind: 'door';
 };
 
-export type Door = WallMount & { kind: 'door'; widthCm: number };
-export type Window_ = WallMount & { kind: 'window'; widthCm: number };
+export type Window_ = {
+  id: string;
+  a: Point;
+  b: Point;
+  flipped: boolean;
+  kind: 'window';
+};
 
 // コンセント: 1〜4口、点配置
 export type Outlet = {

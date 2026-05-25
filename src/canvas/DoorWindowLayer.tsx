@@ -1,73 +1,65 @@
-import type { Door, Wall, Window_ } from '../types';
+import type { Door, Point, Window_ } from '../types';
 import type { ViewBox } from './coords';
-import { wallAngleRad } from './wallMath';
 
 type Props = {
-  walls: Wall[];
   doors: Door[];
   windows: Window_[];
   viewBox: ViewBox;
   selectedId: string | null;
   onSelect?: (id: string) => void;
+  // 描画プレビュー用 (作図中の始点→hover)
+  preview?: { kind: 'door' | 'window'; from: Point; to: Point } | null;
 };
 
-function findWall(walls: Wall[], id: string): Wall | undefined {
-  return walls.find((w) => w.id === id);
+function segMetrics(a: Point, b: Point) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return null;
+  const cosA = dx / len;
+  const sinA = dy / len;
+  return { len, cosA, sinA };
 }
 
-// ドア: 壁上に widthCm の開口部 + 弧で建築記号を描く。
-// 弧は開口部の片端を中心とし半径 = widthCm の 1/4 円。flipped で反対側に。
 function DoorSymbol({
-  wall,
   door,
   strokeW,
   selected,
   onSelect,
 }: {
-  wall: Wall;
   door: Door;
   strokeW: number;
   selected: boolean;
   onSelect?: () => void;
 }) {
-  const len = Math.hypot(wall.b.x - wall.a.x, wall.b.y - wall.a.y);
-  if (len === 0) return null;
-  const ang = wallAngleRad(wall);
-  const cosA = Math.cos(ang);
-  const sinA = Math.sin(ang);
-  // 開口部の中心位置
-  const cx = wall.a.x + (wall.b.x - wall.a.x) * door.t;
-  const cy = wall.a.y + (wall.b.y - wall.a.y) * door.t;
-  // 開口部の両端
-  const half = door.widthCm / 2;
-  const hingeX = cx - cosA * half;
-  const hingeY = cy - sinA * half;
-  const tipX = cx + cosA * half;
-  const tipY = cy + sinA * half;
-  // ヒンジから垂直方向に半径 widthCm のドア板（ライン）を伸ばす
-  // flipped で法線方向を反転
+  const m = segMetrics(door.a, door.b);
+  if (!m) return null;
+  const { len, cosA, sinA } = m;
+  // 開口部の中心と両端 (a=ヒンジ側, b=先端側)
+  const hingeX = door.a.x;
+  const hingeY = door.a.y;
+  const tipX = door.b.x;
+  const tipY = door.b.y;
+  // 開閉方向: 線分の法線方向に開く
   const nDir = door.flipped ? -1 : 1;
   const nx = -sinA * nDir;
   const ny = cosA * nDir;
-  const doorEndX = hingeX + nx * door.widthCm;
-  const doorEndY = hingeY + ny * door.widthCm;
-
-  // 弧 (hinge を中心、開口幅 = 半径)。SVG path で arc を描く。
+  const doorEndX = hingeX + nx * len;
+  const doorEndY = hingeY + ny * len;
+  // 弧 (hinge 中心、開口幅 = 半径)
   const sweep = nDir > 0 ? 0 : 1;
-  const arcPath = `M ${tipX} ${tipY} A ${door.widthCm} ${door.widthCm} 0 0 ${sweep} ${doorEndX} ${doorEndY}`;
-
+  const arcPath = `M ${tipX} ${tipY} A ${len} ${len} 0 0 ${sweep} ${doorEndX} ${doorEndY}`;
   const color = selected ? '#1e90ff' : '#444';
-
   return (
     <g
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: onSelect ? 'pointer' : 'default' }}
       onPointerDown={(e) => {
         if (!onSelect) return;
         e.stopPropagation();
         onSelect();
       }}
     >
-      {/* 開口部 (壁を白で隠す) */}
+      {/* 壁を白でマスキングして開口を表現 */}
       <line
         x1={hingeX}
         y1={hingeY}
@@ -87,65 +79,62 @@ function DoorSymbol({
       />
       {/* 弧 */}
       <path d={arcPath} stroke={color} strokeWidth={strokeW * 0.4} fill="none" />
+      {/* ヒンジ点を小さく表示 */}
+      <circle cx={hingeX} cy={hingeY} r={strokeW * 0.3} fill={color} />
     </g>
   );
 }
 
-// 窓: 壁線に重ねる平行二重線。壁部分を白で抜いて 2 本の細線で描く。
 function WindowSymbol({
-  wall,
   win,
   strokeW,
   selected,
   onSelect,
 }: {
-  wall: Wall;
   win: Window_;
   strokeW: number;
   selected: boolean;
   onSelect?: () => void;
 }) {
-  const ang = wallAngleRad(wall);
-  const cosA = Math.cos(ang);
-  const sinA = Math.sin(ang);
-  const cx = wall.a.x + (wall.b.x - wall.a.x) * win.t;
-  const cy = wall.a.y + (wall.b.y - wall.a.y) * win.t;
-  const half = win.widthCm / 2;
-  const ax = cx - cosA * half;
-  const ay = cy - sinA * half;
-  const bx = cx + cosA * half;
-  const by = cy + sinA * half;
-  // 二重線の間隔は strokeW の半分
+  const m = segMetrics(win.a, win.b);
+  if (!m) return null;
+  const { cosA, sinA } = m;
   const off = strokeW * 0.3;
   const nx = -sinA;
   const ny = cosA;
   const color = selected ? '#1e90ff' : '#0070a0';
-
   return (
     <g
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: onSelect ? 'pointer' : 'default' }}
       onPointerDown={(e) => {
         if (!onSelect) return;
         e.stopPropagation();
         onSelect();
       }}
     >
-      {/* 壁を抜く */}
-      <line x1={ax} y1={ay} x2={bx} y2={by} stroke="#ffffff" strokeWidth={strokeW * 1.1} />
-      {/* 二重線 */}
+      {/* 壁を白で抜く */}
       <line
-        x1={ax + nx * off}
-        y1={ay + ny * off}
-        x2={bx + nx * off}
-        y2={by + ny * off}
+        x1={win.a.x}
+        y1={win.a.y}
+        x2={win.b.x}
+        y2={win.b.y}
+        stroke="#ffffff"
+        strokeWidth={strokeW * 1.1}
+      />
+      {/* 平行二重線 */}
+      <line
+        x1={win.a.x + nx * off}
+        y1={win.a.y + ny * off}
+        x2={win.b.x + nx * off}
+        y2={win.b.y + ny * off}
         stroke={color}
         strokeWidth={strokeW * 0.25}
       />
       <line
-        x1={ax - nx * off}
-        y1={ay - ny * off}
-        x2={bx - nx * off}
-        y2={by - ny * off}
+        x1={win.a.x - nx * off}
+        y1={win.a.y - ny * off}
+        x2={win.b.x - nx * off}
+        y2={win.b.y - ny * off}
         stroke={color}
         strokeWidth={strokeW * 0.25}
       />
@@ -154,44 +143,48 @@ function WindowSymbol({
 }
 
 export default function DoorWindowLayer({
-  walls,
   doors,
   windows,
   viewBox,
   selectedId,
   onSelect,
+  preview,
 }: Props) {
   const strokeW = viewBox.w / 100;
   return (
     <g>
-      {doors.map((d) => {
-        const wall = findWall(walls, d.wallId);
-        if (!wall) return null;
-        return (
-          <DoorSymbol
-            key={d.id}
-            wall={wall}
-            door={d}
-            strokeW={strokeW}
-            selected={selectedId === d.id}
-            onSelect={onSelect ? () => onSelect(d.id) : undefined}
-          />
-        );
-      })}
-      {windows.map((w) => {
-        const wall = findWall(walls, w.wallId);
-        if (!wall) return null;
-        return (
-          <WindowSymbol
-            key={w.id}
-            wall={wall}
-            win={w}
-            strokeW={strokeW}
-            selected={selectedId === w.id}
-            onSelect={onSelect ? () => onSelect(w.id) : undefined}
-          />
-        );
-      })}
+      {doors.map((d) => (
+        <DoorSymbol
+          key={d.id}
+          door={d}
+          strokeW={strokeW}
+          selected={selectedId === d.id}
+          onSelect={onSelect ? () => onSelect(d.id) : undefined}
+        />
+      ))}
+      {windows.map((w) => (
+        <WindowSymbol
+          key={w.id}
+          win={w}
+          strokeW={strokeW}
+          selected={selectedId === w.id}
+          onSelect={onSelect ? () => onSelect(w.id) : undefined}
+        />
+      ))}
+      {/* 描画プレビュー: ドラフト線分 (点線) */}
+      {preview && (
+        <line
+          x1={preview.from.x}
+          y1={preview.from.y}
+          x2={preview.to.x}
+          y2={preview.to.y}
+          stroke={preview.kind === 'door' ? '#888' : '#3aa'}
+          strokeWidth={strokeW * 0.5}
+          strokeDasharray={`${strokeW} ${strokeW}`}
+          opacity={0.7}
+          pointerEvents="none"
+        />
+      )}
     </g>
   );
 }

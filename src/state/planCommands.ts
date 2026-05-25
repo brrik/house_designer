@@ -89,16 +89,7 @@ export const duplicatePlanCommand = (sourcePlanId: string, newName: string): Com
       lights: src.lights.map((l) => ({ ...l, id: genId('light') })),
       furnitureInstances: src.furnitureInstances.map((f) => ({ ...f, id: genId('fi') })),
     };
-    // door/window の wallId はコピー後の壁 ID にマッピング
-    const wallIdMap = new Map(src.walls.map((w, i) => [w.id, newPlan.walls[i].id]));
-    newPlan.doors = newPlan.doors.map((d) => ({
-      ...d,
-      wallId: wallIdMap.get(d.wallId) ?? d.wallId,
-    }));
-    newPlan.windows = newPlan.windows.map((w) => ({
-      ...w,
-      wallId: wallIdMap.get(w.wallId) ?? w.wallId,
-    }));
+    // ドア・窓は線分なので wallId マッピング不要（壁とは独立）
     return { ...state, plans: [...state.plans, newPlan], activePlanId: newPlan.id };
   },
 });
@@ -143,9 +134,6 @@ export const removeWallCommand = (wallId: string): Command => ({
     updateActivePlan(state, (p) => ({
       ...p,
       walls: p.walls.filter((w) => w.id !== wallId),
-      // 紐づくドア・窓も削除
-      doors: p.doors.filter((d) => d.wallId !== wallId),
-      windows: p.windows.filter((w) => w.wallId !== wallId),
     })),
 });
 
@@ -159,15 +147,16 @@ export const setWallColorCommand = (wallId: string, color: string): Command => (
 });
 
 // ---- ドア / 窓 ----
-export const addDoorCommand = (wallId: string, t: number, widthCm = 80): Command => ({
+type PointLike = { x: number; y: number };
+
+export const addDoorCommand = (a: PointLike, b: PointLike): Command => ({
   type: 'door/add',
   apply: (state) =>
     updateActivePlan(state, (p) => {
       const door: Door = {
         id: genId('door'),
-        wallId,
-        t,
-        widthCm,
+        a,
+        b,
         flipped: false,
         kind: 'door',
       };
@@ -175,15 +164,14 @@ export const addDoorCommand = (wallId: string, t: number, widthCm = 80): Command
     }),
 });
 
-export const addWindowCommand = (wallId: string, t: number, widthCm = 120): Command => ({
+export const addWindowCommand = (a: PointLike, b: PointLike): Command => ({
   type: 'window/add',
   apply: (state) =>
     updateActivePlan(state, (p) => {
       const win: Window_ = {
         id: genId('window'),
-        wallId,
-        t,
-        widthCm,
+        a,
+        b,
         flipped: false,
         kind: 'window',
       };
@@ -299,6 +287,14 @@ export const lockPlanCommand = (paddingCm = 50): Command => ({
         xs.push(w.a.x, w.b.x);
         ys.push(w.a.y, w.b.y);
       }
+      for (const d of p.doors) {
+        xs.push(d.a.x, d.b.x);
+        ys.push(d.a.y, d.b.y);
+      }
+      for (const w of p.windows) {
+        xs.push(w.a.x, w.b.x);
+        ys.push(w.a.y, w.b.y);
+      }
       for (const o of p.outlets) {
         xs.push(o.x);
         ys.push(o.y);
@@ -311,7 +307,6 @@ export const lockPlanCommand = (paddingCm = 50): Command => ({
         xs.push(l.x);
         ys.push(l.y);
       }
-      // ドア・窓は壁参照なので xs/ys に含めなくても壁経由で覆われる
       if (xs.length === 0 || ys.length === 0) {
         // 何も無い場合はトリミングしない、ただし lock のみ反映
         return { ...p, locked: true };
@@ -327,15 +322,18 @@ export const lockPlanCommand = (paddingCm = 50): Command => ({
         x: o.x + dx,
         y: o.y + dy,
       });
+      const shiftSegment = <T extends { a: PointLike; b: PointLike }>(seg: T): T => ({
+        ...seg,
+        a: { x: seg.a.x + dx, y: seg.a.y + dy },
+        b: { x: seg.b.x + dx, y: seg.b.y + dy },
+      });
       return {
         ...p,
         locked: true,
         canvasSize: { wCm: maxX - minX, hCm: maxY - minY },
-        walls: p.walls.map((w) => ({
-          ...w,
-          a: { x: w.a.x + dx, y: w.a.y + dy },
-          b: { x: w.b.x + dx, y: w.b.y + dy },
-        })),
+        walls: p.walls.map(shiftSegment),
+        doors: p.doors.map(shiftSegment),
+        windows: p.windows.map(shiftSegment),
         outlets: p.outlets.map(shift),
         infoOutlets: p.infoOutlets.map(shift),
         lights: p.lights.map(shift),
