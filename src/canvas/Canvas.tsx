@@ -241,7 +241,7 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
             walls={plan.walls}
             viewBox={viewBox}
             selectedId={selectedId}
-            onSelect={(id) => tool === 'select' && setSelectedId(id)}
+            onSelect={tool === 'select' ? (id) => setSelectedId(id) : undefined}
             preview={
               tool === 'wall' && wallStart && hover
                 ? { from: wallStart, to: hover, color }
@@ -254,7 +254,7 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
             windows={plan.windows}
             viewBox={viewBox}
             selectedId={selectedId}
-            onSelect={(id) => tool === 'select' && setSelectedId(id)}
+            onSelect={tool === 'select' ? (id) => setSelectedId(id) : undefined}
           />
           <PointMarkerLayer
             outlets={plan.outlets}
@@ -262,7 +262,7 @@ export default function Canvas({ canvasWCm, canvasHCm }: Props) {
             lights={plan.lights}
             viewBox={viewBox}
             selectedId={selectedId}
-            onSelect={(id) => tool === 'select' && setSelectedId(id)}
+            onSelect={tool === 'select' ? (id) => setSelectedId(id) : undefined}
           />
           <FurnitureLayer
             instances={plan.furnitureInstances}
